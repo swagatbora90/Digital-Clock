@@ -49,6 +49,9 @@ import net.floodlightcontroller.routing.IRoutingDecision;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.topology.ITopologyService;
+import net.floodlightcontroller.topology.NodePortTuple;
+import net.floodlightcontroller.multipathrouting.IMultiPathRoutingService;
+import net.floodlightcontroller.flowdispatchero.IFlowDispatcherService;
 
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
 import org.projectfloodlight.openflow.protocol.match.Match;
@@ -74,6 +77,8 @@ import org.slf4j.LoggerFactory;
 @LogMessageCategory("Flow Programming")
 public class Forwarding extends ForwardingBase implements IFloodlightModule {
 	protected static Logger log = LoggerFactory.getLogger(Forwarding.class);
+    protected IMultiPathRoutingService  multipathService;
+    protected IFlowDispatcherService flowdispatcherService;
 
 	@Override
 	@LogMessageDoc(level="ERROR",
@@ -231,29 +236,48 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 				int srcVsDest = srcCluster.compareTo(dstCluster);
 				if (srcVsDest == 0) {
 					if (!srcDap.equals(dstDap)) {
-						Route route =
+						// Added by Jie
+						Route route = 
+								multipathService.getRoute(srcDap.getSwitchDPID(),
+                                                       srcDap.getPort(),
+                                                       dstDap.getSwitchDPID(),
+                                                       dstDap.getPort());
+						// Debugging, remove later
+						System.out.print("Route from "+srcDap.getSwitchDPID()+" to "+dstDap.getSwitchDPID()+".\n");
+						System.out.print("RouteInUse in Forwarding: "+route.toString()+".\n");
+						
+                        Route backupRoute = null;
+                        if (isQoS(cntx) == true){
+                        	backupRoute = multipathService.getBackupRoute(route);
+                        	System.out.print("BackupRoute in Forwarding: "+backupRoute.toString()+".\n");
+                        }
+					    // End
+						
+	/*					Route route =
 								routingEngineService.getRoute(srcDap.getSwitchDPID(), 
 										srcDap.getPort(),
 										dstDap.getSwitchDPID(),
-										dstDap.getPort(), U64.of(0)); //cookie = 0, i.e., default route
-						if (route != null) {
-							if (log.isTraceEnabled()) {
-								log.trace("pushRoute inPort={} route={} " +
-										"destination={}:{}",
-										new Object[] { inPort, route,
-										dstDap.getSwitchDPID(),
-										dstDap.getPort()});
-							}
+										dstDap.getPort(), U64.of(0)); //cookie = 0, i.e., default route*/
+									/*	if (route != null) {
+											if (log.isTraceEnabled()) {
+												log.trace("pushRoute inPort={} route={} " +
+														"destination={}:{}",
+														new Object[] { inPort, route,
+														dstDap.getSwitchDPID(),
+														dstDap.getPort()});
+											}
+											U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);*/
 
-							U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
+						//	Match m = createMatchFromPacket(sw, inPort, cntx);
 
-							Match m = createMatchFromPacket(sw, inPort, cntx);
-
-							pushRoute(route, m, pi, sw.getId(), cookie,
-									cntx, requestFlowRemovedNotifn, false,
-									OFFlowModCommand.ADD);
-						}
-					}
+											/*pushRoute(route, routeMatch, pi, sw.getId(), cookie,
+													cntx, requestFlowRemovedNotifn, false,
+													OFFlowModCommand.ADD);*/
+											
+											Map<String, String> message=flowdispatcherService.pushRoutes(route, backupRoute, isQoS(cntx) );
+											System.out.println(message);
+										}
+					
 					iSrcDaps++;
 					iDstDaps++;
 				} else if (srcVsDest < 0) {
@@ -394,6 +418,23 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 
 		return;
 	}
+	
+	// Added by Jie
+	private boolean isQoS(FloodlightContext cntx) {
+		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+		boolean isQoS = false;
+		if (eth.getEtherType() == EthType.IPv4) {
+			IPv4 ipv4 = (IPv4) eth.getPayload();
+			byte diffServ = ipv4.getDiffServ();
+			isQoS = diffServ != 0 ? true:true;
+			
+		} else if (eth.getEtherType() == EthType.ARP) {
+			isQoS = true;
+
+		}
+		return isQoS;
+		}
+	// End of newly added
 
 	// IFloodlightModule methods
 
@@ -447,6 +488,8 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 		this.topologyService = context.getServiceImpl(ITopologyService.class);
 		this.debugCounterService = context.getServiceImpl(IDebugCounterService.class);
 		this.switchService = context.getServiceImpl(IOFSwitchService.class);
+        this.multipathService = context.getServiceImpl(IMultiPathRoutingService.class);
+        this.flowdispatcherService = context.getServiceImpl(IFlowDispatcherService.class);
 
 		Map<String, String> configParameters = context.getConfigParams(this);
 		String tmp = configParameters.get("hard-timeout");
