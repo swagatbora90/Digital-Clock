@@ -237,12 +237,28 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 				if (srcVsDest == 0) {
 					if (!srcDap.equals(dstDap)) {
 						// Added by Jie
+						// for debugging
+						Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+						if (eth.getEtherType() == EthType.IPv4) {
+							IPv4 ipv4 = (IPv4) eth.getPayload();
+							IPv4Address srcIPv4Ad = ipv4.getSourceAddress();
+							IPv4Address dstIPv4Ad = ipv4.getDestinationAddress();
+							IpProtocol type = ipv4.getProtocol();
+							short id = ipv4.getIdentification();
+							System.out.println("################IP Packet Details in PacketIn###################");
+							System.out.println("From "+srcIPv4Ad.toString()+" to "+dstIPv4Ad.toString());
+							System.out.println("Type of Payload: "+type.toString());
+							System.out.println(id);
+							System.out.println("#####################IP Packet Details Ends#####################");
+						}
+						
 						Route route = 
 								multipathService.getRoute(srcDap.getSwitchDPID(),
                                                        srcDap.getPort(),
                                                        dstDap.getSwitchDPID(),
                                                        dstDap.getPort());
 						// Debugging, remove later
+						System.out.print(isQoS(cntx));
 						System.out.print("Route from "+srcDap.getSwitchDPID()+" to "+dstDap.getSwitchDPID()+".\n");
 						System.out.print("RouteInUse in Forwarding: "+route.toString()+".\n");
 						
@@ -274,7 +290,7 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 													cntx, requestFlowRemovedNotifn, false,
 													OFFlowModCommand.ADD);*/
 											
-											Map<String, String> message=flowdispatcherService.pushRoutes(route, backupRoute, isQoS(cntx) );
+											Map<String, String> message=flowdispatcherService.pushRoutes(route, backupRoute, isQoS(cntx), isIPv4(cntx));
 											System.out.println(message);
 										}
 					
@@ -429,11 +445,20 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 			isQoS = diffServ != 0 ? true:true;
 			
 		} else if (eth.getEtherType() == EthType.ARP) {
-			isQoS = true;
+			isQoS = false;
 
 		}
 		return isQoS;
 		}
+	
+	private boolean isIPv4(FloodlightContext cntx){
+		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+		boolean isIPv4 = false;
+		if (eth.getEtherType() == EthType.IPv4){
+			isIPv4 = true;
+		}
+		return isIPv4;
+	}
 	// End of newly added
 
 	// IFloodlightModule methods

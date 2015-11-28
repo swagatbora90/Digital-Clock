@@ -22,6 +22,7 @@ public class MultiRoute {
 
     public Route getRoute() {
         routeCount = (routeCount+1)%routeSize;
+        //System.out.println(routeCount);
         return routes.get(routeCount);
     }
 

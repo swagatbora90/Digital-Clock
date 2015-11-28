@@ -202,6 +202,11 @@ public class MultiPathRouting implements IFloodlightModule ,ITopologyListener, I
         Route backupRoute = buildShortestPath(srcDpid, dstDpid, modifiedLinks);
         //System.out.print("BackupRoute: "+backupRoute.toString()+".\n");
         routes.addRoute(backupRoute);
+        ////Do again. Just in case.
+        //HashMap<DatapathId, HashSet<LinkWithCost>> modifiedLinks2 = neglectLinks(links, backupRoute);
+        //Route backupRoute2 = buildShortestPath(srcDpid, dstDpid, modifiedLinks2);
+        //System.out.print("BackupRoute: "+backupRoute.toString()+".\n");
+        //routes.addRoute(backupRoute2);
         
         return routes;
     }
@@ -355,17 +360,20 @@ public class MultiPathRouting implements IFloodlightModule ,ITopologyListener, I
     	DatapathId dstDpid = route1.getId().getDst();
     	NodePortTuple ingress = route1.getPath().get(0);
     	NodePortTuple egress = route1.getPath().get(route1.getPath().size() -1);
-    	
+    ///System.out.println("Inside getBAckupRoute function..." + route1.toString() +" ");
     	List<NodePortTuple> nptList;
-    	
+    	Route backupRoute = null;
     	// call getRoute again to get shortest route
         MultiRoute multiRoute = getMultiRoute(srcDpid,dstDpid);
-		Route backupRoute = multiRoute.getRoute();
+        //System.out.println("The whole multiroute array: "+multiRoute.getRoutes().toString());
+        //System.out.println("The route count value " +multiRoute.getRouteCount());
+		 backupRoute = multiRoute.getRoute();
 		
-		if(backupRoute.equals(route1)){
+		//while(backupRoute == route1){
 			// call again when the first returned route is in use.
-			backupRoute = multiRoute.getRoute();
-		}
+			//backupRoute = multiRoute.getRoute();
+			//System.out.println("------Log------ Route in use, get another one.");
+		//}
 		
 		if (backupRoute != null) {
 			nptList= new ArrayList<NodePortTuple>(backupRoute.getPath());
@@ -379,6 +387,20 @@ public class MultiPathRouting implements IFloodlightModule ,ITopologyListener, I
         nptList.add(npt);
 
         backupRoute = new Route(new RouteId(srcDpid,dstDpid), nptList);
+        
+        //System.out.println("!!!!Route In Use!!!! "+route1.toString());
+       
+        while(backupRoute.equals(route1))
+        {
+        	System.out.println("###############While Loop Running############");
+        	backupRoute = multiRoute.getRoute();
+        	nptList= new ArrayList<NodePortTuple>(backupRoute.getPath());
+        	npt = new NodePortTuple(ingress.getNodeId(), ingress.getPortId());
+            nptList.add(0, npt);
+            npt = new NodePortTuple(egress.getNodeId(), egress.getPortId());
+            nptList.add(npt);
+            backupRoute = new Route(new RouteId(srcDpid,dstDpid), nptList);
+        }	
 		return backupRoute;
     }
 

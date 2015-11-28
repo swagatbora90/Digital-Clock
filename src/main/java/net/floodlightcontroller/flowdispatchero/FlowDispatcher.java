@@ -417,51 +417,57 @@ public class FlowDispatcher implements IFloodlightModule, IOFSwitchListener, IFl
 	
 	
 	@Override
-	public Map<String, String>pushRoutes(Route r1, Route r2, boolean isQos){
-	boolean isInserted  = false;
-	Route main_route = r1;
-	Route backup_route = r2;
-	Map<String, String> message = new HashMap<String, String>();
+	public Map<String, String>pushRoutes(Route r1, Route r2, boolean isQos, boolean isIPv4){
+		Map<String, String> message = new HashMap<String, String>();
+		boolean isInserted  = false;
+		Route main_route = r1;
+		Route backup_route = r2;
+		List<NodePortTuple> path_main = main_route.getPath();
+		
+		
+	if(!isIPv4){
+			// Non IPv4 packet, probably an ARP.
+			System.out.println("------------Log----------- Inserting one time flow for non IPv4 packet.");
+			if(main_route != null)
+				insertArpFlow(path_main);
+			} 
+	else{
 	
+	//Route backup_route = r2;
+		
 	DatapathId src_main = main_route.getId().getSrc();
-	System.out.println("----------LOG-----------main_route src"+ src_main.toString());
+	//System.out.println("----------LOG-----------main_route src"+ src_main.toString());
 	DatapathId dst_main = main_route.getId().getDst();
-	System.out.println("----------LOG-----------main_route dst"+ dst_main.toString());
-	DatapathId src_backup = backup_route.getId().getSrc();
-	System.out.println("----------LOG-----------backup_route src"+ src_backup.toString());
-	DatapathId dst_backup = backup_route.getId().getDst();
-	System.out.println("----------LOG-----------backup_route dst"+ dst_backup.toString());
+	//System.out.println("----------LOG-----------main_route dst"+ dst_main.toString());
 	
-	List<NodePortTuple> path_main = main_route.getPath();
+	//List<NodePortTuple> path_main = main_route.getPath();
+	//System.out.println("----------LOG-----------main_path"+ path_main.toString());
 	
-	System.out.println("----------LOG-----------main_path"+ path_main.toString());
+	if (isQos == true && backup_route != null) {
+		DatapathId src_backup = backup_route.getId().getSrc();
+		//System.out.println("----------LOG-----------backup_route src"+ src_backup.toString());
+		DatapathId dst_backup = backup_route.getId().getDst();
+		//System.out.println("----------LOG-----------backup_route dst"+ dst_backup.toString());
+		List<NodePortTuple> path_backup = backup_route.getPath();
+		//System.out.println("----------LOG-----------backup_path"+ path_backup.toString());
+		
+		ArrayList<NodePortTuple> start_bucket= new ArrayList<NodePortTuple>();
+		start_bucket.add(path_main.get(0));
+		start_bucket.add(path_main.get(1));
+		start_bucket.add(path_backup.get(1));
+		
+		//System.out.println("----------LOG-----------start_bucket"+ start_bucket.toString());		
+		
+		ArrayList<NodePortTuple> end_bucket = new ArrayList<NodePortTuple>();
+		end_bucket.add(path_main.get(path_main.size()-1));
+		end_bucket.add(path_main.get(path_main.size()-2));
+		end_bucket.add(path_backup.get(path_backup.size()-2));
+		
+		//System.out.println("----------LOG-----------end_bucket"+ end_bucket.toString());
+		
 	
-	List<NodePortTuple> path_backup = backup_route.getPath();
-	System.out.println("----------LOG-----------backup_path"+ path_backup.toString());
-	
-	ArrayList<NodePortTuple> start_bucket= new ArrayList<NodePortTuple>();
-	start_bucket.add(path_main.get(0));
-	start_bucket.add(path_main.get(1));
-	start_bucket.add(path_backup.get(1));
-	
-	System.out.println("----------LOG-----------start_bucket"+ start_bucket.toString());
-	
-	
-	ArrayList<NodePortTuple> end_bucket = new ArrayList<NodePortTuple>();
-	end_bucket.add(path_main.get(path_main.size()-1));
-	end_bucket.add(path_main.get(path_main.size()-2));
-	end_bucket.add(path_backup.get(path_backup.size()-2));
-	
-	System.out.println("----------LOG-----------end_bucket"+ end_bucket.toString());
-	
-	
-	
-	if(isQos)
-	{
-	 if(main_route != null && backup_route != null)
-	 	{
 			//Check main route and backup route have same source and destination switch
-			if(src_main == src_backup && dst_main==dst_backup){
+		if(src_main == src_backup && dst_main==dst_backup){
 		 				
 					insertFlows(path_main, true);
 					insertFlows(path_backup, true);
@@ -472,29 +478,28 @@ public class FlowDispatcher implements IFloodlightModule, IOFSwitchListener, IFl
 		 			if(isInserted)
 		 				isInserted=insertGroups(end_bucket);
 		 			//System.out.println("end_bucket has been inserted ");
-		 			insertFlows(path_main, true);
-		 			insertFlows(path_backup, true);
+		 			//insertFlows(path_main, true);
+		 			//insertFlows(path_backup, true);
 		 			if(isInserted)
 		 			message.put("FlowInsert","True");
 				}
 			else
 				System.out.println("source and destination doesn't match");
-		}
-	}	
-	
-	else{
-			if(main_route != null)
-				insertFlows(path_main,false);
-			
-		}
 		
+
+	} else {
+		// Not QoS or No Backup Route.
+		System.out.println("------------Log----------- No bakcup route for isQoS="+ isQos);
+		if(main_route != null)
+			insertFlows(path_main,false);
+		}
+	
+		}
+
 		return message;
 	}
 	
-	
-	
-	
-	
+
 	
 private boolean insertGroups(ArrayList<NodePortTuple> S){
 	System.out.println("Entering InsertGroups");
@@ -543,8 +548,8 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 			curr_sw.write(groupAdd);
 			
 			//sendBarrier(curr_sw);
-			/* ARP and IPv4 from sw1 to group1 */
-			OFFlowAdd flowAdd = curr_sw.getOFFactory().buildFlowAdd()
+			
+			/*OFFlowAdd flowAdd = curr_sw.getOFFactory().buildFlowAdd()
 					.setCookie(cookie)
 					.setHardTimeout(0)
 					.setIdleTimeout(0)
@@ -558,18 +563,25 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 									.build()))
 									.build();
 
-			curr_sw.write(flowAdd);
+			curr_sw.write(flowAdd);*/
 
-			flowAdd = flowAdd.createBuilder()
+			OFFlowAdd flowAdd = curr_sw.getOFFactory().buildFlowAdd()
+					.setCookie(cookie)
+					.setHardTimeout(0)
+					.setIdleTimeout(0)
+					.setPriority(FlowModUtils.PRIORITY_MAX)
 					.setMatch(curr_sw.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
 							.setExact(MatchField.IN_PORT,  S.get(0).getPortId())
 							.build())
+							.setActions(Collections.singletonList((OFAction) curr_sw.getOFFactory().actions().buildGroup()
+							.setGroup(OFGroup.of(1))
+							.build()))
 							.build();
 			curr_sw.write(flowAdd);
 
 			/* ARP and IPv4 from sw2a to host */
-			flowAdd = flowAdd.createBuilder()
+			/*flowAdd = flowAdd.createBuilder()
 					.setMatch(curr_sw.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.ARP)
 							.setExact(MatchField.IN_PORT, S.get(1).getPortId())
@@ -579,18 +591,22 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 									.setPort( S.get(0).getPortId())
 									.build()))
 									.build();
-			curr_sw.write(flowAdd);
+			curr_sw.write(flowAdd);*/
 
 			flowAdd = flowAdd.createBuilder()
 					.setMatch(curr_sw.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
 							.setExact(MatchField.IN_PORT, S.get(1).getPortId())
 							.build())
+							.setActions(Collections.singletonList((OFAction) curr_sw.getOFFactory().actions().buildOutput()
+							.setMaxLen(0xffFFffFF)
+							.setPort( S.get(0).getPortId())
+							.build()))
 							.build();
 			curr_sw.write(flowAdd);
 
 			/* ARP and IPv4 from sw2b to host */
-			flowAdd = flowAdd.createBuilder()
+			/*flowAdd = flowAdd.createBuilder()
 					.setMatch(curr_sw.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.ARP)
 							.setExact(MatchField.IN_PORT, S.get(2).getPortId())
@@ -600,13 +616,17 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 							.setPort( S.get(0).getPortId())
 							.build()))
 							.build();
-			curr_sw.write(flowAdd);
+			curr_sw.write(flowAdd);*/
 
 			flowAdd = flowAdd.createBuilder()
 					.setMatch(curr_sw.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
 							.setExact(MatchField.IN_PORT, S.get(2).getPortId())
 							.build())
+							.setActions(Collections.singletonList((OFAction) curr_sw.getOFFactory().actions().buildOutput()
+							.setMaxLen(0xffFFffFF)
+							.setPort( S.get(0).getPortId())
+							.build()))
 							.build();
 			curr_sw.write(flowAdd);
 
@@ -618,75 +638,57 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 			return pushed;
 }
 	
-	
-	
-	private boolean insertFlows(List<NodePortTuple> path, boolean qos_value){
+
+	private boolean insertArpFlow(List<NodePortTuple> path){
 		int index;
-		boolean pushed =true;
+		boolean pushed = true;
 		HashMap<DatapathId,ArrayList<OFPort>> LinksById= new HashMap<DatapathId,ArrayList<OFPort>>();
 		for(index = 0; index< path.size();index+=2){
-				DatapathId curr_switch=path.get(index).getNodeId();
-				System.out.println("DatapathId of current_switch:"+curr_switch.toString());
-				OFPort port1 = path.get(index).getPortId();
-				System.out.println("Value of 1st port in link:"+port1.toString());
-				OFPort port2 = path.get(index+1).getPortId();
-				System.out.println("Value of 2nd port in link:"+port2.toString());
-				ArrayList<OFPort> list_port= new ArrayList<OFPort>(2);
-				list_port.add(port1);
-				list_port.add(port2);
-				System.out.println("Link is"+list_port.toString());
-				LinksById.put(curr_switch,list_port);
+			DatapathId curr_switch=path.get(index).getNodeId();
+			//System.out.println("DatapathId of current_switch:"+curr_switch.toString());
+			OFPort port1 = path.get(index).getPortId();
+			//System.out.println("Value of 1st port in link:"+port1.toString());
+			OFPort port2 = path.get(index+1).getPortId();
+			//System.out.println("Value of 2nd port in link:"+port2.toString());
+			ArrayList<OFPort> list_port= new ArrayList<OFPort>(2);
+			list_port.add(port1);
+			list_port.add(port2);
+			//System.out.println("Link is"+list_port.toString());
+			LinksById.put(curr_switch,list_port);
 		}
-		
-		for(DatapathId Did : LinksById.keySet())
-		{
-			String key = Did.toString();
-			String value = LinksById.get(Did).toString();
-			System.out.println(key+ " "+value);
-			
-			
-		}
-		
-		for(DatapathId switch_temp : LinksById.keySet())
-		{
-		if(switch_temp == path.get(0).getNodeId() || switch_temp == path.get(path.size()-1).getNodeId()){
-			if(!qos_value){
-								IOFSwitch curr_switch = switchService.getSwitch(switch_temp);
-								OFFlowDelete flowDelete = curr_switch.getOFFactory().buildFlowDelete()
-					.setCookie(cookie)
-					.setCookieMask(U64.NO_MASK)
-					.build();
+	
+		for(DatapathId switch_temp : LinksById.keySet()){
+			IOFSwitch curr_switch = switchService.getSwitch(switch_temp);
+			//System.out.println(curr_switch.toString());
+			OFFlowDelete flowDelete = curr_switch.getOFFactory().buildFlowDelete()
+				.setCookie(cookie)
+				.setCookieMask(U64.NO_MASK)
+				.setMatch(curr_switch.getOFFactory().buildMatch().setExact(MatchField.ETH_TYPE, EthType.ARP).build())
+				.build();
 			curr_switch.write(flowDelete);
-
-			sendBarrier(curr_switch);
-
-			/* ARP and IPv4 from sw2a to sw3 */
+		
 			OFFlowAdd flowAdd = curr_switch.getOFFactory().buildFlowAdd()
+				.setCookie(cookie)
+				.setHardTimeout(65535)
+				.setIdleTimeout(5)
+				.setPriority(FlowModUtils.PRIORITY_MAX)
+				.setMatch(curr_switch.getOFFactory().buildMatch()
+						.setExact(MatchField.ETH_TYPE, EthType.ARP)
+						.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
+						.build())
+						.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
+								.setMaxLen(0xffFFffFF)
+								.setPort(LinksById.get(curr_switch.getId()).get(1))
+								.build()))
+								.build();
+			curr_switch.write(flowAdd);
+			System.out.println("[LOG]-----------Writing FlowAdd for ARP :"+curr_switch.toString());
+		
+			flowAdd = curr_switch.getOFFactory().buildFlowAdd()
 					.setCookie(cookie)
-					.setHardTimeout(0)
-					.setIdleTimeout(0)
+					.setHardTimeout(65535)
+					.setIdleTimeout(5)
 					.setPriority(FlowModUtils.PRIORITY_MAX)
-					.setMatch(curr_switch.getOFFactory().buildMatch()
-							.setExact(MatchField.ETH_TYPE, EthType.ARP)
-							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
-							.build())
-							.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
-									.setMaxLen(0xffFFffFF)
-									.setPort(LinksById.get(curr_switch.getId()).get(1))
-									.build()))
-									.build();
-			curr_switch.write(flowAdd);
-
-			flowAdd = flowAdd.createBuilder()
-					.setMatch(curr_switch.getOFFactory().buildMatch()
-							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
-							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
-							.build())
-							.build();
-			curr_switch.write(flowAdd);
-
-			/* ARP and IPv4 from sw3 to sw2a */
-			flowAdd = flowAdd.createBuilder()
 					.setMatch(curr_switch.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.ARP)
 							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(1))
@@ -696,16 +698,80 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 									.setPort(LinksById.get(curr_switch.getId()).get(0))
 									.build()))
 									.build();
-			curr_switch.write(flowAdd);
+				curr_switch.write(flowAdd);
+			System.out.println("[LOG]-----------Writing FlowAdd for ARP :"+curr_switch.toString());
+		}
+		
+	return pushed;
+	}
 
-			flowAdd = flowAdd.createBuilder()
+	
+	private boolean insertFlows(List<NodePortTuple> path, boolean qos_value){
+		int index;
+		boolean pushed =true;
+		HashMap<DatapathId,ArrayList<OFPort>> LinksById= new HashMap<DatapathId,ArrayList<OFPort>>();
+		for(index = 0; index< path.size();index+=2){
+				DatapathId curr_switch=path.get(index).getNodeId();
+				//System.out.println("DatapathId of current_switch:"+curr_switch.toString());
+				OFPort port1 = path.get(index).getPortId();
+				//System.out.println("Value of 1st port in link:"+port1.toString());
+				OFPort port2 = path.get(index+1).getPortId();
+				//System.out.println("Value of 2nd port in link:"+port2.toString());
+				ArrayList<OFPort> list_port= new ArrayList<OFPort>(2);
+				list_port.add(port1);
+				list_port.add(port2);
+				//System.out.println("Link is"+list_port.toString());
+				LinksById.put(curr_switch,list_port);
+		}
+		
+		for(DatapathId switch_temp : LinksById.keySet())
+		{
+		if(switch_temp == path.get(0).getNodeId() || switch_temp == path.get(path.size()-1).getNodeId()){
+			if(!qos_value){
+					IOFSwitch curr_switch = switchService.getSwitch(switch_temp);
+					OFFlowDelete flowDelete = curr_switch.getOFFactory().buildFlowDelete()
+					.setCookie(cookie)
+					.setCookieMask(U64.NO_MASK)
+					.setMatch(curr_switch.getOFFactory().buildMatch().setExact(MatchField.ETH_TYPE, EthType.IPv4).build())
+					.build();
+			curr_switch.write(flowDelete);
+
+			//sendBarrier(curr_switch);
+
+			OFFlowAdd flowAdd = curr_switch.getOFFactory().buildFlowAdd()
+					.setCookie(cookie)
+					.setHardTimeout(0)
+					.setIdleTimeout(0)
+					.setPriority(FlowModUtils.PRIORITY_MAX)
+					.setMatch(curr_switch.getOFFactory().buildMatch()
+							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
+							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
+							.build())
+							.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
+									.setMaxLen(0xffFFffFF)
+									.setPort(LinksById.get(curr_switch.getId()).get(1))
+									.build()))
+							.build();
+			System.out.println("[LOG]-----------Writing FlowAdd for:"+curr_switch.toString());
+			curr_switch.write(flowAdd);
+			
+			 flowAdd = curr_switch.getOFFactory().buildFlowAdd()
+					.setCookie(cookie)
+					.setHardTimeout(5)
+					.setIdleTimeout(0)
+					.setPriority(FlowModUtils.PRIORITY_MAX)
 					.setMatch(curr_switch.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
 							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(1))
 							.build())
+							.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
+									.setMaxLen(0xffFFffFF)
+									.setPort(LinksById.get(curr_switch.getId()).get(0))
+									.build()))
 							.build();
+			System.out.println("[LOG]-----------Writing FlowAdd for:"+curr_switch.toString());
 			curr_switch.write(flowAdd);
-					
+
 					
 						}
 				}
@@ -715,6 +781,7 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 								OFFlowDelete flowDelete = curr_switch.getOFFactory().buildFlowDelete()
 					.setCookie(cookie)
 					.setCookieMask(U64.NO_MASK)
+					.setMatch(curr_switch.getOFFactory().buildMatch().setExact(MatchField.ETH_TYPE, EthType.IPv4).build())
 					.build();
 			curr_switch.write(flowDelete);
 
@@ -727,7 +794,7 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 					.setIdleTimeout(0)
 					.setPriority(FlowModUtils.PRIORITY_MAX)
 					.setMatch(curr_switch.getOFFactory().buildMatch()
-							.setExact(MatchField.ETH_TYPE, EthType.ARP)
+							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
 							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
 							.build())
 							.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
@@ -735,20 +802,16 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 									.setPort(LinksById.get(curr_switch.getId()).get(1))
 									.build()))
 									.build();
+			System.out.println("[LOG]-----------Writing FlowAdd for:"+curr_switch.toString());
 			curr_switch.write(flowAdd);
 
-			flowAdd = flowAdd.createBuilder()
+		    flowAdd = curr_switch.getOFFactory().buildFlowAdd()
+					.setCookie(cookie)
+					.setHardTimeout(0)
+					.setIdleTimeout(0)
+					.setPriority(FlowModUtils.PRIORITY_MAX)
 					.setMatch(curr_switch.getOFFactory().buildMatch()
 							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
-							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(0))
-							.build())
-							.build();
-			curr_switch.write(flowAdd);
-
-			/* ARP and IPv4 from sw3 to sw2a */
-			flowAdd = flowAdd.createBuilder()
-					.setMatch(curr_switch.getOFFactory().buildMatch()
-							.setExact(MatchField.ETH_TYPE, EthType.ARP)
 							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(1))
 							.build())
 							.setActions(Collections.singletonList((OFAction) curr_switch.getOFFactory().actions().buildOutput()
@@ -756,14 +819,7 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 									.setPort(LinksById.get(curr_switch.getId()).get(0))
 									.build()))
 									.build();
-			curr_switch.write(flowAdd);
-
-			flowAdd = flowAdd.createBuilder()
-					.setMatch(curr_switch.getOFFactory().buildMatch()
-							.setExact(MatchField.ETH_TYPE, EthType.IPv4)
-							.setExact(MatchField.IN_PORT, LinksById.get(curr_switch.getId()).get(1))
-							.build())
-							.build();
+		    System.out.println("[LOG]-----------Writing FlowAdd for:"+curr_switch.toString());
 			curr_switch.write(flowAdd);
 				}
 		
@@ -840,7 +896,7 @@ private boolean insertGroups(ArrayList<NodePortTuple> S){
 				.build();
 		ListenableFuture<OFBarrierReply> future = sw.writeRequest(barrierRequest);
 		try {
-			future.get(10, TimeUnit.SECONDS); /* If successful, we can discard the reply. */
+			future.get(1, TimeUnit.SECONDS); /* If successful, we can discard the reply. */
 		} catch (InterruptedException | ExecutionException
 				| TimeoutException e) {
 			//log.error("Switch {} doesn't support barrier messages? OVS should.", sw.toString());

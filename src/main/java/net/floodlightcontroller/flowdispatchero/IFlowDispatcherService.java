@@ -6,7 +6,7 @@ import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.routing.*;
 
 public interface IFlowDispatcherService extends IFloodlightService {
-	Map<String, String> pushRoutes(Route r1, Route r2, boolean isQos);
+	Map<String, String> pushRoutes(Route r1, Route r2, boolean isQos, boolean isIPv4);
 	
 	//Map<String, String> handleResetRequest(String json);
 }
