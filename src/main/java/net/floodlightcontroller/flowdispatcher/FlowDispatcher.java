@@ -418,7 +418,7 @@ public class FlowDispatcher implements IFloodlightModule, IOFSwitchListener, IFl
 	
 	
 	@Override
-	public Map<String, String>pushRoutes(Route r1, Route r2, boolean isQos){
+	public Map<String, String>pushRoutes(Route r1, Route r2, boolean isQos, boolean isIpv4){
 	Route main_route = r1;
 	Route backup_route = r2;
 	Map<String, String> message = new HashMap<String, String>();
